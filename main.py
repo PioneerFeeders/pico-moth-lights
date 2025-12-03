@@ -1,3 +1,5 @@
+print("main.py started – moth lights controller running")
+
 from machine import Pin
 import time
 
