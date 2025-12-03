@@ -7,21 +7,13 @@ import time
 # CONFIG
 # ==============================
 
-# How many seconds in one "logical day" of the cycle.
-# For real-world use, set to: 86400  (24 * 60 * 60)
-# For testing, you can use something small like 10.
-DAY_SECONDS = 10   # <-- CHANGE TO 86400 WHEN YOU'RE READY
-
 CYCLE_LENGTH_DAYS = 24
 
-# We use one global 24-day cycle.
-# Each cage has a 24-day pattern (G/Y/R) shifted in time.
-#
-# Offsets in *days* for when each cage starts its cycle:
-#   Cage 1: Day 0   -> green days 1–6 correspond to global days 0–5
-#   Cage 2: Day 6   -> first green at global day 6
-#   Cage 3: Day 12  -> first green at global day 12
-#   Cage 4: Day 18  -> first green at global day 18
+# Cage offsets in *days* within the 24-day cycle:
+#   Cage 1: offset 0   -> green days 1–6 at global days 0–5
+#   Cage 2: offset 6   -> first green at global day 6
+#   Cage 3: offset 12  -> first green at global day 12
+#   Cage 4: offset 18  -> first green at global day 18
 CAGE_OFFSETS = {
     1: 0,
     2: 6,
@@ -29,14 +21,26 @@ CAGE_OFFSETS = {
     4: 18,
 }
 
-# We also allow shifting the entire global cycle at boot.
-# elapsed_days = 0 at boot, so:
-#   START_DAY_OFFSET = 0   -> global_day = 0  at boot
-#   START_DAY_OFFSET = 12  -> global_day = 12 at boot
+# ====== CYCLE ANCHOR ======
+# We anchor the 24-day cycle to a real calendar date.
 #
-# You said: "Cage #3 starting today as the 1st green day".
-# Cage 3's first green day is at global_day = 12, so:
-START_DAY_OFFSET = 12
+# Pick a calendar date and decide what "global day" it should be.
+# Then the code calculates every other day from that.
+#
+# You said: "Today should be Day 2 green cage #3."
+# For cage 3:
+#   green days are cage_day 0–5
+#   Day 2 green  -> cage_day = 1
+# cage_day = (global_day - 12) % 24
+# So we want: (global_day - 12) % 24 = 1  -> global_day = 13
+#
+# If TODAY’S calendar date should be that global_day=13, then:
+REFERENCE_YEAR  = 2025
+REFERENCE_MONTH = 12
+REFERENCE_DAY   = 3    # <-- set this to today's date on the day you flash this
+
+REFERENCE_GLOBAL_DAY = 13  # so that cage 3 is Day 2 green on that date
+
 
 # ==============================
 # PIN MAP (YOUR TRAFFIC LIGHT MODULES)
@@ -70,7 +74,7 @@ LED_OFF = 0
 
 
 # ==============================
-# HELPER FUNCTIONS
+# HELPERS
 # ==============================
 
 def set_cage_color(cage_num, color):
@@ -88,7 +92,6 @@ def set_cage_color(cage_num, color):
     elif color == "green":
         cage["G"].value(LED_ON)
     else:
-        # Unknown color, leave off
         print("Unknown color for cage", cage_num, ":", color)
 
 
@@ -96,12 +99,11 @@ def color_for_cage_day(cage_day):
     """
     cage_day: 0–23 for that cage's own 24-day cycle.
 
-    Your spec (1-based days):
       Days 1–6   -> GREEN
       Days 7–20  -> YELLOW
       Days 21–24 -> RED
 
-    Converted to 0-based indexes:
+    0-based:
       0–5   -> GREEN
       6–19  -> YELLOW
       20–23 -> RED
@@ -114,20 +116,42 @@ def color_for_cage_day(cage_day):
         return "red"
 
 
-def update_lights(elapsed_seconds):
+def days_since_reference():
     """
-    Compute current global day in the 24-day cycle,
-    then compute each cage's position and set its color.
+    Number of calendar days since the reference date.
+    Uses the Pico's RTC (time.localtime()).
     """
-    # Whole days since Pico boot (or since script started)
-    elapsed_days = int(elapsed_seconds // DAY_SECONDS)
+    # current local time
+    now = time.localtime()  # (year, month, mday, hour, min, sec, wday, yday)
+    now_secs = time.mktime(now)
 
-    # Global cycle day 0–23 (shifted by START_DAY_OFFSET)
-    global_day = (elapsed_days + START_DAY_OFFSET) % CYCLE_LENGTH_DAYS
+    # reference date at midnight
+    ref_tuple = (REFERENCE_YEAR, REFERENCE_MONTH, REFERENCE_DAY,
+                 0, 0, 0, 0, 0)
+    ref_secs = time.mktime(ref_tuple)
 
-    print("elapsed_days:", elapsed_days, "global_day:", global_day)
+    # whole days between reference date and now
+    return int((now_secs - ref_secs) // (24 * 60 * 60))
 
-    # For each cage, shift by its offset to get that cage's local day
+
+def current_global_day():
+    """
+    Calculate which 0–23 'global day' we are in the 24-day cycle,
+    based purely on calendar date. This will be the same even after reboots.
+    """
+    d = days_since_reference()
+    # The reference date is defined to be REFERENCE_GLOBAL_DAY in the cycle,
+    # so we just shift forward by d days.
+    global_day = (REFERENCE_GLOBAL_DAY + d) % CYCLE_LENGTH_DAYS
+    return global_day
+
+
+def update_lights_for_global_day(global_day):
+    """
+    For each cage, compute its local day and set its color.
+    """
+    print("Using global_day:", global_day)
+
     for cage_num, offset in CAGE_OFFSETS.items():
         cage_day = (global_day - offset) % CYCLE_LENGTH_DAYS
         color = color_for_cage_day(cage_day)
@@ -144,19 +168,23 @@ for c in CAGES:
     for pin in CAGES[c].values():
         pin.value(LED_OFF)
 
-start_time = time.time()
-last_day_seen = -1  # so we only update on new "days"
+last_global_day = None
 
 while True:
-    now = time.time()
-    elapsed = now - start_time
+    try:
+        gday = current_global_day()
 
-    current_day = int(elapsed // DAY_SECONDS)
+        # Only update when the logical day changes
+        if gday != last_global_day:
+            print("=== NEW LOGICAL DAY:", gday, "===")
+            update_lights_for_global_day(gday)
+            last_global_day = gday
 
-    # Only recalculate when we hit a new logical "day"
-    if current_day != last_day_seen:
-        last_day_seen = current_day
-        print("=== NEW LOGICAL DAY:", current_day, "===")
-        update_lights(elapsed)
+        # We don't need to check super often; once every 30–60 seconds is fine.
+        # The "day change" will happen a little after local midnight.
+        time.sleep(30)
 
-    time.sleep(0.5)
+    except Exception as e:
+        # Don't let a transient error kill the loop
+        print("Error in main loop:", e)
+        time.sleep(5)
