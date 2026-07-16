@@ -108,10 +108,10 @@ def localtime_detroit():
 CYCLE_LENGTH_DAYS = 24
 
 CAGE_OFFSETS = {
-    1: 0,
-    2: 6,
-    3: 12,
-    4: 18,
+    1: 5,
+    2: 10,
+    3: 15,
+    4: 20,
     5: 0,
 }
 
@@ -154,9 +154,9 @@ def set_cage_color(cage_num, color):
         cage["G"].value(LED_ON)
 
 def color_for_cage_day(cage_day):
-    if 0 <= cage_day <= 5:
+    if 0 <= cage_day <= 3:
         return "green"
-    elif 6 <= cage_day <= 19:
+    elif 4 <= cage_day <= 19:
         return "yellow"
     else:
         return "red"
@@ -223,3 +223,4 @@ while True:
     except Exception as e:
         print("Error in main loop:", e)
         time.sleep(5)
+
