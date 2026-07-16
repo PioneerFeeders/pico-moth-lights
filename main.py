@@ -112,6 +112,7 @@ CAGE_OFFSETS = {
     2: 6,
     3: 12,
     4: 18,
+    5: 3,
 }
 
 # ====== CYCLE ANCHOR ======
@@ -130,6 +131,7 @@ CAGES = {
     2: {"R": Pin(5, Pin.OUT),  "Y": Pin(6, Pin.OUT),  "G": Pin(7, Pin.OUT)},
     3: {"R": Pin(28, Pin.OUT), "Y": Pin(27, Pin.OUT), "G": Pin(26, Pin.OUT)},
     4: {"R": Pin(21, Pin.OUT), "Y": Pin(20, Pin.OUT), "G": Pin(19, Pin.OUT)},
+    5: {"R": Pin(18, Pin.OUT), "Y": Pin(16, Pin.OUT), "G": Pin(17, Pin.OUT)},
 }
 
 LED_ON = 1
